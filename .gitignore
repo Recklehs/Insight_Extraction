@@ -1,0 +1,61 @@
+logs/
+
+# -------------------------
+# Python & Virtual Environments
+# -------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+*_env/
+.env
+
+# -------------------------
+# IDE / Editor / OS Specific
+# -------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# -------------------------
+# Airflow Core - 중요!
+# -------------------------
+# 실행 로그: DAG 실행 기록, 스케줄러 로그 등이 저장됩니다.
+logs/
+
+# 로컬 SQLite 데이터베이스: 메타데이터가 저장되는 기본 DB 파일입니다.
+airflow.db
+airflow.db-journal
+
+# Airflow 설정 파일: Fernet Key, DB 접속 정보 등 민감 정보가 포함됩니다.
+airflow.cfg
+unittests.cfg
+
+# Airflow 프로세스 ID 파일
+airflow-*.pid
+
+# -------------------------
+# 데이터 파일 (선택 사항)
+# -------------------------
+# DAG에서 사용하는 원본 데이터나 처리 결과물은 보통 git에 올리지 않습니다.
+# (예: data 폴더를 만들어 관리하는 경우)
+data/
+*.csv
+*.json
+*.parquet
+*.db
+
+# -------------------------
+# 기타 라이브러리 및 설정
+# -------------------------
+.pytest_cache/
+.mypy_cache/
+build/
+dist/
+*.egg-info/

@@ -1,0 +1,11 @@
+feedparser
+pendulum
+requests
+apache-airflow-providers-google
+langchain-google-genai
+beautifulsoup4
+lxml
+apache-airflow-providers-http
+apache-airflow-providers-postgres
+playwright
+apache-airflow-providers-mysql
