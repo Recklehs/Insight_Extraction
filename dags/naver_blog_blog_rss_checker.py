@@ -20,7 +20,7 @@ KST = timezone("Asia/Seoul")
     doc_md="""
     ### 블로그 RSS 피드 수집 DAG
 
-    PostgreSQL DB의 `naver_blog_list` 테이블을 참조하여 모니터링할 블로그 목록을 가져옵니다.
+    MySQL DB의 `naver_blog_list` 테이블을 참조하여 모니터링할 블로그 목록을 가져옵니다.
     각 블로그의 RSS 피드를 주기적으로 확인하여, 새로운 게시물이 발견되면 `blog_posts_rss` 테이블에 저장합니다.
     
     **✅ 사전 준비사항:**
@@ -28,7 +28,8 @@ KST = timezone("Asia/Seoul")
     2. **Database Tables:**
         - `naver_blog_list`: 모니터링할 블로그 목록 관리 테이블 (is_active=TRUE)
         - `blog_posts_rss`: 수집한 새 글 정보를 저장할 테이블
-    3. **Python Libraries:** `requests`, `feedparser`, `apache-airflow-providers-postgres` 설치
+    3. **Python Libraries:** `requests`, `feedparser`, `apache-airflow-providers-mysql` 설치
+
     """
 )
 def rss_blog_post_collector_dag():
@@ -79,7 +80,7 @@ def rss_blog_post_collector_dag():
         mysql_hook = MySqlHook(mysql_conn_id='blog_posts_db')
         new_posts_count = 0
 
-        # 최신 글부터 확인하기 위해 피드 순서를 뒤집음
+        # 피드에 있는 글을 시간 순서대로(오래된 글 -> 최신 글) 처리하기 위해 순서를 뒤집음
         for entry in reversed(feed.entries):
             guid = entry.get('guid')
             link = entry.get('link')

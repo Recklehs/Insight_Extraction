@@ -9,12 +9,6 @@ from airflow.providers.mysql.hooks.mysql import MySqlHook
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 
 # -------------------------------------------------------------------
-# 0. 설정: Airflow Connection ID
-# -------------------------------------------------------------------
-POSTGRES_CONN_ID = "postgres_default"
-
-
-# -------------------------------------------------------------------
 # 1. 데이터베이스 상호작용 함수
 # -------------------------------------------------------------------
 def get_urls_to_crawl() -> list[dict[str, str]]:
@@ -148,7 +142,7 @@ def run_scrape_and_save(guid: str):
         # 비동기 스크래핑 함수 실행
         result = asyncio.run(scrape_naver_blog_async(url))
         
-        # guid 없이 결과 저장
+        # ID로 사용된 URL(guid)을 기준으로 크롤링 결과를 저장
         save_result_to_db(**result)
 
         if result.get("http_status_code") == 200:
