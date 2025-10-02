@@ -9,3 +9,8 @@ apache-airflow-providers-http
 apache-airflow-providers-postgres
 playwright
 apache-airflow-providers-mysql
+python-dotenv
+pydantic
+langgraph
+langchain
+mysql-connector-python
