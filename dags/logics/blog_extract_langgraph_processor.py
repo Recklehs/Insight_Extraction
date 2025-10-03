@@ -5,11 +5,10 @@ import traceback
 from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
-# .env 파일 관리를 위한 라이브러리
-from dotenv import load_dotenv
 
-# MySQL 연동을 위한 라이브러리
-import mysql.connector
+# --- Airflow Hook 추가 ---
+from airflow.providers.mysql.hooks.mysql import MySqlHook
+
 
 # LangChain 및 Google Generative AI 관련 라이브러리
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -20,18 +19,15 @@ from pydantic import BaseModel, Field
 # LangGraph 관련 라이브러리
 from langgraph.graph import StateGraph, END
 
-# --- 0. 환경 설정 ---
-# .env 파일에서 환경 변수를 로드합니다.
-load_dotenv()
 
 # 환경 변수 확인
-required_env_vars = ["GOOGLE_API_KEY", "DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"]
+required_env_vars = ["GOOGLE_API_KEY"]
 for var in required_env_vars:
     if var not in os.environ:
         raise ValueError(f"{var}가 .env 파일에 설정되지 않았습니다. 확인해주세요.")
 
 # 사용할 LLM 모델 이름
-LLM_MODEL_NAME = "gemini-1.5-flash"
+LLM_MODEL_NAME = "gemini-2.5-flash"
 
 
 # --- 1. 최종 출력 및 LLM 응답 스키마 정의 (Pydantic 모델) ---
@@ -108,20 +104,17 @@ workflow.add_edge("extract_core_ideas", END)
 app = workflow.compile()
 
 
-# --- 5. 데이터베이스 연동 및 처리 로직 ---
+# --- 5. 데이터베이스 연동 및 처리 로직 (수정된 부분) ---
 def get_db_connection():
-    """데이터베이스 커넥션을 생성하고 반환합니다."""
+    """Airflow Hook을 사용하여 데이터베이스 커넥션을 생성하고 반환합니다."""
     try:
-        conn = mysql.connector.connect(
-            host=os.environ["DB_HOST"],
-            user=os.environ["DB_USER"],
-            password=os.environ["DB_PASSWORD"],
-            database=os.environ["DB_NAME"]
-        )
-        print("✅ 데이터베이스 연결 성공")
+        # 1단계에서 설정한 Connection ID를 여기에 입력합니다.
+        mysql_hook = MySqlHook(mysql_conn_id='blog_posts_db')
+        conn = mysql_hook.get_conn()
+        print("✅ 데이터베이스 연결 성공 (via Airflow Hook)")
         return conn
-    except mysql.connector.Error as e:
-        print(f"❌ 데이터베이스 연결 실패: {e}")
+    except Exception as e:
+        print(f"❌ 데이터베이스 연결 실패 (via Airflow Hook): {e}")
         raise
 
 def process_and_store_item(conn, crawl_item):

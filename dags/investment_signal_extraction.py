@@ -23,7 +23,7 @@ with DAG(
     default_args=default_args,
     description='크롤링된 블로그 포스트에서 투자 시그널을 추출, 분석, 저장하는 DAG',
     # 매 시간 실행
-    schedule_interval=timedelta(hours=1),
+    schedule=timedelta(hours=1),
     catchup=False,
     tags=['investment', 'llm', 'langgraph'],
 ) as dag:
