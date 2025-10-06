@@ -33,7 +33,7 @@ LLM_MODEL_NAME = "gemini-2.5-flash"
 # --- 1. 최종 출력 및 LLM 응답 스키마 정의 (Pydantic 모델) ---
 class Signal(BaseModel):
     """추출된 개별 투자 시그널 정보를 담는 데이터 구조"""
-    ticker: str = Field(description="식별된 주식 또는 코인 티커 (예: 'AAPL', 'BTC')")
+    ticker: str = Field(description="식별된 주식, 섹터 또는 코인 티커 (예: 'AAPL', 'BTC', 'Renewable Energy Sector')")
     action: Literal["buy", "hold", "sell"] = Field(description="추천 액션: 'buy', 'hold', 'sell' 중 하나")
     evidence: str = Field(description="추천 액션의 근거가 되는 원본 텍스트 내의 핵심 문장")
     confidence_score: float = Field(
@@ -104,15 +104,14 @@ workflow.add_edge("extract_core_ideas", END)
 app = workflow.compile()
 
 
-# --- 5. 데이터베이스 연동 및 처리 로직 (수정된 부분) ---
+# --- 5. 데이터베이스 연동 및 처리 로직 ---
 def get_db_connection():
     """Airflow Hook을 사용하여 데이터베이스 커넥션을 생성하고 반환합니다."""
     try:
-        # 1단계에서 설정한 Connection ID를 여기에 입력합니다.
         mysql_hook = MySqlHook(mysql_conn_id='blog_posts_db')
         conn = mysql_hook.get_conn()
         print("✅ 데이터베이스 연결 성공 (via Airflow Hook)")
-        return conn
+        return conn 
     except Exception as e:
         print(f"❌ 데이터베이스 연결 실패 (via Airflow Hook): {e}")
         raise
@@ -130,7 +129,6 @@ def process_and_store_item(conn, crawl_item):
         INSERT INTO processing_logs (crawl_result_guid, status, llm_model, processed_at)
         VALUES (%s, %s, %s, %s)
         """
-        # 초기 상태는 'failed'로 설정하고 성공 시 'success'로 업데이트
         cursor.execute(log_insert_query, (crawl_guid, 'failed', LLM_MODEL_NAME, datetime.now(timezone.utc)))
         log_id = cursor.lastrowid
         print(f"📘 [{crawl_guid}] 분석 시작. Log ID: {log_id}")
@@ -164,11 +162,10 @@ def process_and_store_item(conn, crawl_item):
 
     except Exception as e:
         print(f"❌ [{crawl_guid}] 처리 중 에러 발생: {e}")
-        # 에러 메시지를 processing_logs에 기록
         if log_id:
             error_message = traceback.format_exc()
             cursor.execute("UPDATE processing_logs SET error_message = %s WHERE log_id = %s", (error_message, log_id))
-        conn.rollback() # 에러 발생 시 모든 변경사항 롤백
+        conn.rollback() 
     finally:
         cursor.close()
 
@@ -182,7 +179,6 @@ def main_processor():
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # is_processed가 0인 데이터 조회
         cursor.execute("SELECT guid, crawled_text FROM crawl_result WHERE is_processed = 0")
         items_to_process = cursor.fetchall()
         
@@ -196,8 +192,12 @@ def main_processor():
 
     except Exception as e:
         print(f"🔥 메인 프로세서에서 심각한 오류 발생: {e}")
+        traceback.print_exc()
     finally:
-        if conn and conn.is_connected():
+        # --- [수정된 부분] ---
+        # conn.is_connected() 메서드는 특정 DB 드라이버에만 존재할 수 있습니다.
+        # 단순히 conn 객체의 존재 여부만 확인하는 것이 더 안정적입니다.
+        if conn:
             conn.close()
             print("🚪 데이터베이스 연결 종료.")
 
