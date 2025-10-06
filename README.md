@@ -41,3 +41,6 @@ Database: MySQL
 
 Containerization: Docker
 
+#### 향후 추가 예정 부분
+- 프로젝트 구조 (Architecture)
+- DB 스키마 구조 
