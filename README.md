@@ -41,14 +41,6 @@ Database: MySQL
 
 Containerization: Docker
 
-네, 알겠습니다. `kb_gold_price_extraction.py` 코드와 프로젝트의 전체적인 흐름을 분석하여 `kb_global_gold_price`와 `gold_price_premium` 테이블에 대한 설명을 추가했습니다.
-
-`gold_price_premium` 테이블을 생성하는 코드는 없지만, 프로젝트 소개에 명시된 "차익거래 지표 생성"이라는 핵심 기능으로 미루어 볼 때, 두 금 시세 테이블의 데이터를 조합하여 프리미엄을 계산하고 저장하는 최종 목적지 테이블로 추정할 수 있습니다.
-
-아래 내용으로 업데이트하시면 됩니다.
-
------
-
 ### 💾 데이터베이스 스키마 (Database Schema)
 
 본 프로젝트의 데이터베이스는 **두 가지 주요 데이터 흐름**을 중심으로 설계되었습니다.
