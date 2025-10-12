@@ -1,7 +1,7 @@
 
-# 자동화된 투자 지표 생성 파이프라인 (Automated Investment Indicator Pipeline)
+# 자동화된 투자 지표 생성 파이프라인 
 
-## 📖 프로젝트 소개 (Overview)
+## 📖 프로젝트 소개 
 Apache Airflow를 기반으로 구축된 자동화 데이터 파이프라인 프로젝트입니다.  
 분산된 여러 데이터 소스(국내외 금 시세, 네이버 블로그)로부터 데이터를 수집하고, LangGraph 기반의 LLM 에이전트를 통해 텍스트 데이터에서 투자 인사이트를 추출합니다.  
 최종적으로 생성된 차익거래(Arbitrage) 관련 지표와 인사이트는 데이터베이스에 저장되어, 투자 전략 수립에 필요한 데이터를 체계적으로 제공하는 것을 목표로 합니다.
@@ -9,7 +9,7 @@ Apache Airflow를 기반으로 구축된 자동화 데이터 파이프라인 프
 <hr style="height: 1px; border: 0; background-color: #e0e0e0;" />
 
 
-### ✨ 주요 기능 (Key Features)
+### ✨ 주요 기능 
 
 #### 📈 실시간 금 가격 차익거래 지표 생성
 
@@ -35,7 +35,7 @@ KRX 금 시장의 1Kg 단위 금 가격(99.99%)을 주기적으로 크롤링합�
 
 <hr style="height: 1px; border: 0; background-color: #e0e0e0;" />
 
-### 🛠️ 기술 스택 (Tech Stack)
+### 🛠️ 기술 스택
 Orchestration: Apache Airflow
 
 Data Collection: Python, Requests, Playwright
@@ -48,7 +48,7 @@ Containerization: Docker
 
 <hr style="height: 1px; border: 0; background-color: #e0e0e0;" />
 
-### 💾 데이터베이스 스키마 (Database Schema)
+### 💾 데이터베이스 스키마 
 
 본 프로젝트의 데이터베이스는 **두 가지 주요 데이터 흐름**을 중심으로 설계되었습니다.
 
