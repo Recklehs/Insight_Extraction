@@ -15,13 +15,14 @@ MYSQL_CONN_ID = "blog_posts_db"
 @dag(
     dag_id="kb_gold_price_crawler", # 이전 DAG와 구분하기 위해 이름 변경
     start_date=pendulum.datetime(2025, 10, 6, tz="Asia/Seoul"),
-    schedule="*/10 * * * *",
+    schedule="*/3 * * * 1-5",
     catchup=False,
     doc_md="""
     ### KB 국민은행 골드바 가격 크롤링 및 저장 DAG (분리 버전)
     - **crawl_gold_price**: 웹사이트에서 금 시세를 크롤링하고 가공합니다.
     - **save_data_to_db**: 크롤링된 데이터를 DB에 저장합니다.
     - 두 태스크로 분리하여 에러 추적 및 재실행 용이성을 높였습니다.
+    - 월-금 3분간격으로 실행됨
     """,
     tags=["crawling", "gold", "kb", "separated"],
 )
