@@ -108,7 +108,7 @@ app = workflow.compile()
 def get_db_connection():
     """Airflow Hook을 사용하여 데이터베이스 커넥션을 생성하고 반환합니다."""
     try:
-        mysql_hook = MySqlHook(mysql_conn_id='blog_posts_db')
+        mysql_hook = MySqlHook(mysql_conn_id='insight_extraction_db')
         conn = mysql_hook.get_conn()
         print("✅ 데이터베이스 연결 성공 (via Airflow Hook)")
         return conn 

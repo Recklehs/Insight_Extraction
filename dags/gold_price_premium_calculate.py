@@ -4,8 +4,7 @@ from airflow.operators.python import PythonOperator, ShortCircuitOperator
 from airflow.providers.mysql.hooks.mysql import MySqlHook
 from datetime import time
 
-# 데이터베이스 연결 ID (Airflow UI > Admin > Connections에서 설정)
-MYSQL_CONN_ID = 'blog_posts_db'
+MYSQL_CONN_ID = 'insight_extraction_db'
 
 def _check_market_hours(**context):
     """

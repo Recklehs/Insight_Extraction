@@ -10,7 +10,7 @@ from typing import List, Dict, Any
 from airflow.decorators import dag, task
 from airflow.providers.mysql.hooks.mysql import MySqlHook
 
-MYSQL_CONN_ID = "blog_posts_db"
+MYSQL_CONN_ID = "insight_extraction_db"
 
 @dag(
     dag_id="kb_gold_price_crawler", # 이전 DAG와 구분하기 위해 이름 변경
