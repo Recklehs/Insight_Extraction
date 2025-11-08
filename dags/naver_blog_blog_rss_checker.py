@@ -40,7 +40,7 @@ def rss_blog_post_collector_dag():
     @task
     def get_target_blog_ids_from_db() -> list[str]:
         """DB의 naver_blog_list 테이블에서 활성화된(is_active=TRUE) 블로그 ID 목록을 가져옵니다."""
-        mysql_hook = MySqlHook(mysql_conn_id='blog_posts_db')
+        mysql_hook = MySqlHook(mysql_conn_id='insight_extraction_db')
         sql = "SELECT blog_id FROM naver_blog_list WHERE is_active = TRUE;"
         try:
             records = mysql_hook.get_records(sql)
@@ -77,7 +77,7 @@ def rss_blog_post_collector_dag():
             logging.info(f"[{blog_id}] 게시물이 없습니다.")
             return
 
-        mysql_hook = MySqlHook(mysql_conn_id='blog_posts_db')
+        mysql_hook = MySqlHook(mysql_conn_id='insight_extraction_db')
         new_posts_count = 0
 
         # 피드에 있는 글을 시간 순서대로(오래된 글 -> 최신 글) 처리하기 위해 순서를 뒤집음

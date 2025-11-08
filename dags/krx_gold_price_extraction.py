@@ -25,7 +25,7 @@ PAYLOAD = {
     "isuCd": "KRD040200002",
     "csvxls_isNo": "false",
 }
-MYSQL_CONN_ID = "blog_posts_db"
+MYSQL_CONN_ID = "insight_extraction_db"
 TARGET_TABLE = "krx_gold_price_minute"
 REQUIRED_FIELDS = ["TRD_DD", "PRSNT_PRC", "TMZN_OPNPRC", "TMZN_HGPRC", "TMZN_LWPRC", "TM_ACC_TRDVOL"]
 

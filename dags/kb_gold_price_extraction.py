@@ -10,7 +10,7 @@ from typing import List, Dict, Any
 from airflow.decorators import dag, task
 from airflow.providers.mysql.hooks.mysql import MySqlHook
 
-MYSQL_CONN_ID = "blog_posts_db"
+MYSQL_CONN_ID = "insight_extraction_db"
 
 @dag(
     dag_id="kb_gold_price_crawler", # 이전 DAG와 구분하기 위해 이름 변경
@@ -39,9 +39,8 @@ def kb_gold_price_crawler_dag_separated():
         print("금 시세 크롤링을 시작합니다.")
         
         url = "https://obank.kbstar.com/quics?page=C023489"
-        headers = {'User-Agent': 'Mozilla/5.0 ...'} # 헤더 정보
+        headers = {'User-Agent': 'Mozilla/5.0 ...'} 
         
-        # 실제 운영에서는 Selenium/Playwright 사용이 필요
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         html_content = response.content

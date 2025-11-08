@@ -17,7 +17,7 @@ def get_urls_to_crawl() -> list[dict[str, str]]:
     Airflow 동적 매핑을 위해 딕셔너리 리스트를 반환합니다.
     e.g., [{'guid': 'http://url1'}, {'guid': 'http://url2'}]
     """
-    mysql_hook = MySqlHook(mysql_conn_id='blog_posts_db')
+    mysql_hook = MySqlHook(mysql_conn_id='insight_extraction_db')
     # crawl_check 테이블의 guid가 바로 크롤링할 URL입니다.
     sql = "SELECT guid FROM crawl_check WHERE crawled = FALSE;"
     records = mysql_hook.get_records(sql)
@@ -36,7 +36,7 @@ def save_result_to_db(source_url: str, crawled_text: str, http_status_code: int)
     크롤링 결과를 crawl_result 테이블에 저장합니다.
     source_url을 기준으로 ON DUPLICATE KEY UPDATE를 수행합니다.
     """
-    mysql_hook = MySqlHook(mysql_conn_id='blog_posts_db')
+    mysql_hook = MySqlHook(mysql_conn_id='insight_extraction_db')
     # MySQL 호환 구문으로 수정
     sql = """
         INSERT INTO crawl_result (source_url, crawled_text, http_status_code, crawled_at)
@@ -53,7 +53,7 @@ def update_check_table(guid: str):
     크롤링이 성공적으로 완료된 후 crawl_check 테이블의 상태를 업데이트합니다.
     이때 guid는 크롤링한 URL입니다.
     """
-    mysql_hook = MySqlHook(mysql_conn_id='blog_posts_db')
+    mysql_hook = MySqlHook(mysql_conn_id='insight_extraction_db')
     sql = "UPDATE crawl_check SET crawled = TRUE WHERE guid = %s;"
     mysql_hook.run(sql, parameters=(guid,))
 
