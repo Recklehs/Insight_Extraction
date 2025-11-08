@@ -39,9 +39,8 @@ def kb_gold_price_crawler_dag_separated():
         print("금 시세 크롤링을 시작합니다.")
         
         url = "https://obank.kbstar.com/quics?page=C023489"
-        headers = {'User-Agent': 'Mozilla/5.0 ...'} # 헤더 정보
+        headers = {'User-Agent': 'Mozilla/5.0 ...'} 
         
-        # 실제 운영에서는 Selenium/Playwright 사용이 필요
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         html_content = response.content
