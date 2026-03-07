@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}{{ blog.blog_id }} | Insight Dashboard{% endblock %}
+{% block page_title %}{{ blog.blog_id }} 블로그의 수집/분석 이력{% endblock %}
+
+{% block content %}
+  {% if message %}
+    <section class="panel flash-panel flash-success">{{ message }}</section>
+  {% endif %}
+  {% if error %}
+    <section class="panel flash-panel flash-error">{{ error }}</section>
+  {% endif %}
+  <section class="panel detail-header">
+    <div>
+      <p class="section-kicker">Blog Detail</p>
+      <h2>{{ blog.blog_id }}</h2>
+      <p class="muted">상태: <strong>{{ "active" if blog.is_active else "inactive" }}</strong></p>
+      <p class="muted">초기 2일 백필 완료: {{ blog.initial_backfill_completed_at|datetime }}</p>
+      <p class="muted">마지막 RSS 성공 시각: {{ blog.last_successful_rss_checked_at|datetime }}</p>
+    </div>
+    <div class="card-actions">
+      <a class="secondary-button" href="{{ blog.blog_url }}" target="_blank" rel="noreferrer">블로그 홈 열기</a>
+      <a class="ghost-button link-button" href="/blogs">목록으로</a>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-header">
+      <div>
+        <p class="section-kicker">Posts</p>
+        <h2>수집된 글 목록</h2>
+      </div>
+      <span class="count-pill">{{ posts|length }} posts</span>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>제목</th>
+            <th>발행 시각</th>
+            <th>크롤링</th>
+            <th>분석</th>
+            <th>최신 분석 요약</th>
+            <th>원문</th>
+            <th>작업</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for post in posts %}
+            <tr>
+              <td>
+                <div class="title-cell">
+                  <strong>{{ post.title }}</strong>
+                  <span class="guid">{{ post.guid }}</span>
+                </div>
+              </td>
+              <td>{{ post.pub_date|datetime }}</td>
+              <td>
+                {% if post.crawled %}
+                  <span class="status status-live">done</span>
+                {% else %}
+                  <span class="status status-pending">pending</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if not post.is_processed and post.latest_status %}
+                  <span class="status status-pending">requeued</span>
+                {% elif post.latest_status == "success" %}
+                  <span class="status status-live">success</span>
+                {% elif post.latest_status == "failed" %}
+                  <span class="status status-error">failed</span>
+                {% elif post.is_processed %}
+                  <span class="status status-live">processed</span>
+                {% elif post.http_status_code and post.http_status_code != 200 %}
+                  <span class="status status-error">crawl failed</span>
+                {% else %}
+                  <span class="status status-pending">queued</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="analysis-preview">
+                  {% if post.latest_status == "success" %}
+                    <p class="muted">
+                      {{ post.latest_processed_at|datetime }} · {{ post.latest_llm_model }}
+                    </p>
+                    {% if post.latest_signal_count %}
+                      <div class="signal-preview-list">
+                        {% for signal in post.latest_signal_preview %}
+                          <article class="inline-signal-card">
+                            <div class="signal-head">
+                              <strong>{{ signal.ticker }}</strong>
+                              <span class="signal-action action-{{ signal.action }}">{{ signal.action }}</span>
+                            </div>
+                            <p class="muted">confidence {{ "%.2f"|format(signal.confidence_score) }}</p>
+                            <p class="inline-evidence">{{ signal.evidence }}</p>
+                          </article>
+                        {% endfor %}
+                      </div>
+                    {% else %}
+                      <p class="empty-inline">핵심 투자 시그널 없음</p>
+                    {% endif %}
+                  {% elif post.latest_status == "failed" %}
+                    <p class="muted">{{ post.latest_processed_at|datetime }} · {{ post.latest_llm_model }}</p>
+                    <p class="inline-error">{{ post.latest_error_preview or "실패 로그가 저장되었습니다." }}</p>
+                  {% elif post.http_status_code and post.http_status_code != 200 %}
+                    <p class="empty-inline">크롤링 실패로 분석하지 못했습니다.</p>
+                  {% else %}
+                    <p class="empty-inline">아직 분석 전입니다.</p>
+                  {% endif %}
+                </div>
+              </td>
+              <td><a href="{{ post.link }}" target="_blank" rel="noreferrer">원문 링크</a></td>
+              <td>
+                <div class="stack-actions">
+                  <a href="{{ request.url_for('post_detail', guid=post.guid) }}">상세 보기</a>
+                  <form action="{{ request.url_for('reanalyze_post', guid=post.guid) }}" method="post">
+                    <input type="hidden" name="return_to" value="{{ request.url.path }}" />
+                    <button type="submit" class="ghost-button compact-button">재분석</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="7" class="empty-row">아직 수집된 글이 없습니다.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

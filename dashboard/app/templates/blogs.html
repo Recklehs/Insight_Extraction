@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}블로그 목록 | Insight Dashboard{% endblock %}
+
+{% block content %}
+  {% if message %}
+    <section class="panel flash-panel flash-success">{{ message }}</section>
+  {% endif %}
+  {% if error %}
+    <section class="panel flash-panel flash-error">{{ error }}</section>
+  {% endif %}
+  <section class="panel add-panel">
+    <div>
+      <p class="section-kicker">Blog Registry</p>
+      <h2>네이버 블로그 추가</h2>
+      <p class="muted">블로그 URL을 넣으면 `blog_id`를 자동으로 추출하고 다음 RSS 수집 시 최근 2일치를 백필합니다.</p>
+    </div>
+    <form class="blog-form" action="/blogs" method="post">
+      <label for="blog_url">블로그 URL</label>
+      <div class="form-row">
+        <input
+          id="blog_url"
+          name="blog_url"
+          type="url"
+          placeholder="https://blog.naver.com/your_blog_id"
+          required
+        />
+        <button type="submit">블로그 추가</button>
+      </div>
+      {% if error %}
+        <p class="form-error">{{ error }}</p>
+      {% endif %}
+    </form>
+  </section>
+
+  {% include "partials/blog_sections.html" %}
+{% endblock %}

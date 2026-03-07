@@ -26,12 +26,30 @@ KRX 금 시장의 1Kg 단위 금 가격(99.99%)을 주기적으로 크롤링합�
 
 텍스트의 핵심 투자 아이디어를 분석하고 , 추천 액션(Buy/Hold/Sell)을 분석하여 투자 결정에 참고할 수 있는 정성적 데이터를 생성합니다.
 
+기본 분석 모델은 `gemini-3-flash-preview`이며, `BLOG_LLM_MODEL` 환경변수 또는 Airflow Variable `blog_llm_model`로 변경할 수 있습니다.
+
+실제 분석을 실행하려면 Airflow 컨테이너에 `GOOGLE_API_KEY`가 전달되어야 합니다.
+
 
 #### 📰 네이버 블로그 콘텐츠 수집
 
 관심 키워드에 대한 네이버 블로그 RSS 피드를 주기적으로 확인하여 신규 게시물을 감지합니다.
 
 신규 포스트가 감지되면 해당 URL의 본문 텍스트 전체를 크롤링하여 분석용 데이터로 저장합니다.
+
+블로그를 처음 등록하면 최근 2일치 글을 1회 백필하고, 이후에는 신규 글만 수집합니다.
+
+운영 중 Docker가 내려가 있었다가 다시 올라오면, 블로그별 마지막 성공 RSS 수집 시각 기준으로 복구 구간을 다시 확인해 아직 RSS에 남아 있는 신규 글을 재수집합니다.
+
+#### 🧭 블로그 검증 대시보드
+
+FastAPI + Jinja2 + HTMX 기반의 로컬 대시보드를 통해 다음 작업을 수행할 수 있습니다.
+
+- 블로그 URL 등록 및 비활성화
+- 블로그별 수집 글 목록 조회
+- 마지막 성공 RSS 수집 시각 확인
+- 분석 로그 및 투자 시그널 확인
+- 원문 링크를 직접 열어 LLM 결과 검증
 
 <hr style="height: 1px; border: 0; background-color: #e0e0e0;" />
 
@@ -42,7 +60,7 @@ Data Collection: Python, Requests, Playwright
 
 AI / LLM: LangGraph, Gemini
 
-Database: MySQL
+Database: MySQL, PostgreSQL 18
 
 Containerization: Docker
 
@@ -101,3 +119,74 @@ Containerization: Docker
 
 #### 향후 추가 예정 부분
 - 프로젝트 구조 (Architecture)
+
+### 블로그 파이프라인(PostgreSQL 18) 초기화
+
+블로그 수집/크롤링/분석 파이프라인과 대시보드는 로컬 PostgreSQL 18의 `insight_extraction` DB를 사용합니다.
+
+```bash
+createdb insight_extraction
+psql -d insight_extraction -f sql/init_blog_pipeline.sql
+```
+
+`.env`에는 최소한 아래 블로그 파이프라인 설정이 필요합니다.
+
+```bash
+BLOG_DB_USER=your_local_postgres_user
+BLOG_DB_HOST=host.docker.internal
+BLOG_DB_PORT=5432
+BLOG_DB_NAME=insight_extraction
+BLOG_LLM_MODEL=gemini-3-flash-preview
+GOOGLE_API_KEY=your_gemini_api_key
+```
+
+Airflow 블로그 파이프라인 Connection ID는 `insight_extraction_pg`입니다.
+
+기본 연결 문자열:
+
+```bash
+postgresql://kanghyoseung@host.docker.internal:5432/insight_extraction
+```
+
+Airflow UI에서 직접 등록하려면 아래 값으로 생성합니다.
+
+1. Conn Type: `Postgres`
+2. Conn Id: `insight_extraction_pg`
+3. Host: `host.docker.internal`
+4. Port: `5432`
+5. Schema: `insight_extraction`
+6. Login: 로컬 PostgreSQL 사용자명
+
+### 대시보드 실행
+
+대시보드는 기본적으로 `http://localhost:8090/blogs`에서 확인할 수 있습니다.
+
+- `/blogs/{blog_id}`: 글별 최신 분석 결과와 재분석 버튼을 확인할 수 있습니다.
+- `/signals`: 최근 7일, 최근 1달, 전체 기간 기준으로 BUY/SELL 종목 집계를 확인할 수 있습니다.
+- `/posts/{guid}`: 최신 분석 결과, 전체 로그 이력, 원문 링크, 크롤링 본문을 함께 확인할 수 있습니다.
+- 재분석 버튼은 기존 로그를 지우지 않고 `crawl_result`를 다시 큐에 넣은 뒤 Airflow 분석 DAG를 즉시 호출합니다.
+- 대표 결과는 항상 각 글의 가장 최근 분석 시도 1건 기준으로 표시됩니다.
+
+```bash
+docker compose up --build dashboard
+```
+
+Airflow까지 포함해 전체 환경을 띄우려면:
+
+```bash
+docker compose up --build
+```
+
+동작 방식:
+
+1. 시작 직후 `blog-pipeline-bootstrap` 서비스가 블로그 DAG 3개를 자동 `unpause`하고 `rss_blog_post_collector`를 즉시 1회 실행합니다.
+2. 이후에는 매시간 RSS 수집이 돌고, 수집 완료 후 크롤링 DAG, 크롤링 완료 후 분석 DAG가 자동으로 이어집니다.
+3. Docker가 꺼져 있는 동안에는 수집/분석이 멈추지만, 블로그 운영 데이터는 로컬 PostgreSQL `insight_extraction`에 유지됩니다.
+4. Docker를 다시 켜면 bootstrap이 다시 실행되고, 각 블로그는 `last_successful_rss_checked_at - 1 hour`부터 RSS를 다시 확인해 놓친 글을 복구합니다.
+5. 복구는 RSS feed에 아직 남아 있는 게시물 범위 안에서만 가능합니다.
+
+참고:
+
+1. Airflow 메타데이터용 컨테이너 Postgres는 호스트 포트 `5433`을 사용하도록 바꿔 로컬 PostgreSQL 18과 충돌하지 않게 했습니다.
+2. Docker 컨테이너가 로컬 PostgreSQL 18에 접근하려면 PostgreSQL이 `host.docker.internal`에서 오는 연결을 허용해야 합니다.
+3. 블로그 운영 데이터는 로컬 PostgreSQL `insight_extraction`에 저장되고, Airflow 컨테이너 Postgres는 메타데이터 전용입니다.

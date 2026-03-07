@@ -71,6 +71,9 @@ x-airflow-common:
     # See https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/check-health.html#scheduler-health-check-server
     # yamllint enable rule:line-length
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    AIRFLOW_CONN_INSIGHT_EXTRACTION_PG: "postgresql://${BLOG_DB_USER:-kanghyoseung}@${BLOG_DB_HOST:-host.docker.internal}:${BLOG_DB_PORT:-5432}/${BLOG_DB_NAME:-insight_extraction}"
+    BLOG_LLM_MODEL: "${BLOG_LLM_MODEL:-gemini-3-flash-preview}"
+    GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
     # WARNING: Use _PIP_ADDITIONAL_REQUIREMENTS option ONLY for a quick checks
     # for other purpose (development, test and especially production usage) build/extend Airflow image.
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
@@ -83,6 +86,8 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
     - ${AIRFLOW_PROJ_DIR:-.}/prompts:/opt/airflow/prompts
   user: "${AIRFLOW_UID:-50000}:0"
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   depends_on:
     &airflow-common-depends-on
     redis:
@@ -100,7 +105,7 @@ services:
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
     ports:
-      - "5432:5432" 
+      - "${AIRFLOW_METADATA_POSTGRES_PORT:-5433}:5432"
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
       interval: 10s
@@ -336,6 +341,38 @@ services:
     restart: always
     depends_on:
       <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: "postgresql+psycopg://${BLOG_DB_USER:-kanghyoseung}@${BLOG_DB_HOST:-host.docker.internal}:${BLOG_DB_PORT:-5432}/${BLOG_DB_NAME:-insight_extraction}"
+      AIRFLOW_API_URL: "${AIRFLOW_API_URL:-http://airflow-apiserver:8080}"
+      _AIRFLOW_WWW_USER_USERNAME: "${_AIRFLOW_WWW_USER_USERNAME}"
+      _AIRFLOW_WWW_USER_PASSWORD: "${_AIRFLOW_WWW_USER_PASSWORD}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${DASHBOARD_PORT:-8090}:8000"
+    restart: unless-stopped
+
+  blog-pipeline-bootstrap:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -lc
+      - |
+        set -euo pipefail
+        /bin/bash /opt/airflow/config/bootstrap_blog_pipeline.sh
+        exec tail -f /dev/null
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-apiserver:
+        condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
 

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}Insight Dashboard{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}" />
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <a class="hero-badge" href="/blogs">Insight Extraction Dashboard</a>
+        <div class="hero-copy">
+          <p class="eyebrow">PostgreSQL 18 + Airflow Blog Intelligence</p>
+          <h1>{% block page_title %}블로그 수집과 분석을 한 화면에서 검증합니다.{% endblock %}</h1>
+          <p class="hero-text">
+            원문 링크, 크롤링 본문, LLM 처리 로그, 투자 시그널을 블로그 단위로 추적할 수 있습니다.
+          </p>
+        </div>
+        <nav class="hero-nav">
+          <a class="hero-nav-link{% if request.url.path.startswith('/blogs') %} hero-nav-link-active{% endif %}" href="/blogs">Blogs</a>
+          <a class="hero-nav-link{% if request.url.path.startswith('/signals') %} hero-nav-link-active{% endif %}" href="/signals">Signals</a>
+        </nav>
+      </header>
+      <main class="content">{% block content %}{% endblock %}</main>
+    </div>
+  </body>
+</html>

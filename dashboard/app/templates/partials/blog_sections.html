@@ -1,0 +1,110 @@
+<div id="blog-sections" class="section-stack">
+  <section class="panel">
+    <div class="section-header">
+      <div>
+        <p class="section-kicker">Active Blogs</p>
+        <h2>수집 중인 블로그</h2>
+      </div>
+      <span class="count-pill">{{ active_blogs|length }} active</span>
+    </div>
+    <div class="blog-grid">
+      {% for blog in active_blogs %}
+        <article class="blog-card">
+          <div class="blog-card-head">
+            <div>
+              <p class="blog-id">{{ blog.blog_id }}</p>
+              <a class="blog-link" href="{{ blog.blog_url }}" target="_blank" rel="noreferrer">{{ blog.blog_url }}</a>
+            </div>
+            <span class="status status-live">active</span>
+          </div>
+          <dl class="stats-grid">
+            <div>
+              <dt>수집 글</dt>
+              <dd>{{ blog.post_count }}</dd>
+            </div>
+            <div>
+              <dt>분석 완료</dt>
+              <dd>{{ blog.processed_count }}</dd>
+            </div>
+            <div>
+              <dt>마지막 글</dt>
+              <dd>{{ blog.last_post_at|datetime }}</dd>
+            </div>
+            <div>
+              <dt>마지막 분석</dt>
+              <dd>{{ blog.last_processed_at|datetime }}</dd>
+            </div>
+            <div>
+              <dt>마지막 RSS 확인</dt>
+              <dd>{{ blog.last_successful_rss_checked_at|datetime }}</dd>
+            </div>
+          </dl>
+          <div class="card-actions">
+            <a class="secondary-button" href="/blogs/{{ blog.blog_id }}">상세 보기</a>
+            <form
+              action="/blogs/{{ blog.blog_id }}/deactivate"
+              method="post"
+              hx-post="/blogs/{{ blog.blog_id }}/deactivate"
+              hx-target="#blog-sections"
+              hx-swap="outerHTML"
+            >
+              <button type="submit" class="ghost-button">비활성화</button>
+            </form>
+          </div>
+        </article>
+      {% else %}
+        <p class="empty-state">활성 블로그가 없습니다.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-header">
+      <div>
+        <p class="section-kicker">Inactive Blogs</p>
+        <h2>보관된 블로그</h2>
+      </div>
+      <span class="count-pill">{{ inactive_blogs|length }} inactive</span>
+    </div>
+    <div class="blog-grid">
+      {% for blog in inactive_blogs %}
+        <article class="blog-card muted-card">
+          <div class="blog-card-head">
+            <div>
+              <p class="blog-id">{{ blog.blog_id }}</p>
+              <a class="blog-link" href="{{ blog.blog_url }}" target="_blank" rel="noreferrer">{{ blog.blog_url }}</a>
+            </div>
+            <span class="status status-muted">inactive</span>
+          </div>
+          <dl class="stats-grid">
+            <div>
+              <dt>수집 글</dt>
+              <dd>{{ blog.post_count }}</dd>
+            </div>
+            <div>
+              <dt>분석 완료</dt>
+              <dd>{{ blog.processed_count }}</dd>
+            </div>
+            <div>
+              <dt>마지막 글</dt>
+              <dd>{{ blog.last_post_at|datetime }}</dd>
+            </div>
+            <div>
+              <dt>마지막 분석</dt>
+              <dd>{{ blog.last_processed_at|datetime }}</dd>
+            </div>
+            <div>
+              <dt>마지막 RSS 확인</dt>
+              <dd>{{ blog.last_successful_rss_checked_at|datetime }}</dd>
+            </div>
+          </dl>
+          <div class="card-actions">
+            <a class="secondary-button" href="/blogs/{{ blog.blog_id }}">이력 보기</a>
+          </div>
+        </article>
+      {% else %}
+        <p class="empty-state">비활성 블로그가 없습니다.</p>
+      {% endfor %}
+    </div>
+  </section>
+</div>

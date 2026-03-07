@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}{{ post.title }} | Insight Dashboard{% endblock %}
+{% block page_title %}분석 결과와 원문을 직접 대조합니다.{% endblock %}
+
+{% block content %}
+  {% if message %}
+    <section class="panel flash-panel flash-success">{{ message }}</section>
+  {% endif %}
+  {% if error %}
+    <section class="panel flash-panel flash-error">{{ error }}</section>
+  {% endif %}
+  <section class="panel detail-header">
+    <div>
+      <p class="section-kicker">Post Detail</p>
+      <h2>{{ post.title }}</h2>
+      <p class="muted">{{ blog.blog_id }} · 발행 {{ post.pub_date|datetime }}</p>
+      <p class="guid">GUID: {{ post.guid }}</p>
+    </div>
+    <div class="card-actions">
+      <a class="secondary-button" href="{{ post.link }}" target="_blank" rel="noreferrer">원문 링크 열기</a>
+      <form action="{{ request.url_for('reanalyze_post', guid=post.guid) }}" method="post">
+        <input type="hidden" name="return_to" value="{{ request.url.path }}" />
+        <button type="submit" class="ghost-button">재분석</button>
+      </form>
+      <a class="ghost-button link-button" href="/blogs/{{ blog.blog_id }}">블로그로 돌아가기</a>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-header">
+      <div>
+        <p class="section-kicker">Latest Analysis</p>
+        <h2>최신 분석 결과</h2>
+      </div>
+    </div>
+    {% if latest_log %}
+      <article class="log-card">
+        <div class="log-head">
+          <span class="status {{ 'status-live' if latest_log.status == 'success' else 'status-error' }}">{{ latest_log.status }}</span>
+          <span>{{ latest_log.processed_at|datetime }}</span>
+        </div>
+        <p class="muted mono">{{ latest_log.llm_model }}</p>
+        {% if latest_log.status == "success" %}
+          {% if latest_signals %}
+            <div class="signal-list">
+              {% for signal in latest_signals %}
+                <article class="signal-card">
+                  <div class="signal-head">
+                    <strong>{{ signal.ticker }}</strong>
+                    <span class="signal-action action-{{ signal.action }}">{{ signal.action }}</span>
+                  </div>
+                  <p class="muted">confidence {{ "%.2f"|format(signal.confidence_score) }}</p>
+                  <blockquote>{{ signal.evidence }}</blockquote>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="empty-state">핵심 투자 시그널 없음</p>
+          {% endif %}
+        {% elif latest_log.error_message %}
+          <pre class="error-block">{{ latest_log.error_message }}</pre>
+        {% endif %}
+      </article>
+    {% else %}
+      <p class="empty-state">아직 분석 로그가 없습니다.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel meta-grid">
+    <article class="meta-card">
+      <p class="section-kicker">Collection</p>
+      <h3>수집 메타데이터</h3>
+      <dl>
+        <div><dt>크롤링 대상 URL</dt><dd>{{ crawl_check.source_url if crawl_check else post.link }}</dd></div>
+        <div><dt>크롤링 상태</dt><dd>{{ "완료" if crawl_check and crawl_check.crawled else "대기" }}</dd></div>
+        <div><dt>HTTP 상태</dt><dd>{{ crawl_result.http_status_code if crawl_result else "-" }}</dd></div>
+        <div><dt>크롤링 시각</dt><dd>{{ crawl_result.crawled_at|datetime if crawl_result else "-" }}</dd></div>
+        <div><dt>처리 완료 시각</dt><dd>{{ crawl_result.processed_at|datetime if crawl_result else "-" }}</dd></div>
+      </dl>
+    </article>
+    <article class="meta-card">
+      <p class="section-kicker">Logs</p>
+      <h3>처리 로그</h3>
+      {% for log in logs %}
+        <div class="log-card">
+          <div class="log-head">
+            <span class="status {{ 'status-live' if log.status == 'success' else 'status-error' }}">{{ log.status }}</span>
+            <span>{{ log.processed_at|datetime }}</span>
+          </div>
+          <p class="muted mono">{{ log.llm_model }}</p>
+          {% if log.error_message %}
+            <pre class="error-block">{{ log.error_message }}</pre>
+          {% endif %}
+          <div class="signal-list">
+            {% for signal in signal_map.get(log.log_id, []) %}
+              <article class="signal-card">
+                <div class="signal-head">
+                  <strong>{{ signal.ticker }}</strong>
+                  <span class="signal-action action-{{ signal.action }}">{{ signal.action }}</span>
+                </div>
+                <p class="muted">confidence {{ "%.2f"|format(signal.confidence_score) }}</p>
+                <blockquote>{{ signal.evidence }}</blockquote>
+              </article>
+            {% else %}
+              <p class="muted">이 로그에 저장된 시그널이 없습니다.</p>
+            {% endfor %}
+          </div>
+        </div>
+      {% else %}
+        <p class="empty-state">아직 처리 로그가 없습니다.</p>
+      {% endfor %}
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="section-header">
+      <div>
+        <p class="section-kicker">Crawled Content</p>
+        <h2>크롤링된 본문</h2>
+      </div>
+    </div>
+    {% if crawl_result and crawl_result.crawled_text %}
+      <pre class="content-block">{{ crawl_result.crawled_text }}</pre>
+    {% else %}
+      <p class="empty-state">저장된 본문이 없습니다.</p>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}기간별 종목 신호 | Insight Dashboard{% endblock %}
+{% block page_title %}팔로우 중인 블로그의 BUY/SELL 흐름을 기간별로 집계합니다.{% endblock %}
+
+{% macro render_signal_section(title, action_class, signals, empty_message, request) %}
+  <section class="panel">
+    <div class="section-header">
+      <div>
+        <p class="section-kicker">{{ action_class }}</p>
+        <h2>{{ title }}</h2>
+      </div>
+      <span class="count-pill">{{ signals|length }} tickers</span>
+    </div>
+    {% if signals %}
+      <div class="signal-dashboard-grid">
+        {% for item in signals %}
+          <article class="signal-summary-card">
+            <div class="signal-head">
+              <strong>{{ item.ticker }}</strong>
+              <span class="signal-action action-{{ item.action }}">{{ item.action_label }}</span>
+            </div>
+            <dl class="signal-stats-grid">
+              <div>
+                <dt>등장 글 수</dt>
+                <dd>{{ item.post_count }}</dd>
+              </div>
+              <div>
+                <dt>평균 confidence</dt>
+                <dd>{{ "%.2f"|format(item.avg_confidence) }}</dd>
+              </div>
+              <div>
+                <dt>마지막 언급</dt>
+                <dd>{{ item.last_mentioned_at|datetime }}</dd>
+              </div>
+            </dl>
+            <div class="sample-post-list">
+              {% for sample in item.samples %}
+                <article class="sample-post-card">
+                  <div class="sample-post-meta">
+                    <span class="blog-id">{{ sample.blog_id }}</span>
+                    <span class="muted">{{ sample.published_at|datetime }}</span>
+                  </div>
+                  <strong>{{ sample.title }}</strong>
+                  <div class="stack-actions">
+                    <a href="{{ request.url_for('post_detail', guid=sample.guid) }}">상세 보기</a>
+                    <a href="{{ sample.source_link }}" target="_blank" rel="noreferrer">원문 링크</a>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty-state">{{ empty_message }}</p>
+    {% endif %}
+  </section>
+{% endmacro %}
+
+{% block content %}
+  {% if message %}
+    <section class="panel flash-panel flash-success">{{ message }}</section>
+  {% endif %}
+  {% if error %}
+    <section class="panel flash-panel flash-error">{{ error }}</section>
+  {% endif %}
+
+  <section class="panel">
+    <div class="section-header">
+      <div>
+        <p class="section-kicker">Periods</p>
+        <h2>기간 필터</h2>
+      </div>
+    </div>
+    <div class="period-pill-row">
+      {% for period in period_links %}
+        <a
+          href="{{ period.href }}"
+          class="period-pill{% if period.active %} period-pill-active{% endif %}"
+        >
+          {{ period.label }}
+        </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  {{ render_signal_section("BUY 신호 Top", "buy", buy_signals, "해당 기간에 BUY 신호가 없습니다.", request) }}
+  {{ render_signal_section("SELL 신호 Top", "sell", sell_signals, "해당 기간에 SELL 신호가 없습니다.", request) }}
+{% endblock %}
