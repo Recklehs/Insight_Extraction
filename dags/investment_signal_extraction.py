@@ -22,9 +22,9 @@ with DAG(
     'investment_signal_extraction_dag',
     default_args=default_args,
     description='크롤링된 블로그 포스트에서 투자 시그널을 추출, 분석, 저장하는 DAG',
-    # 매 시간 실행
-    schedule=timedelta(hours=1),
+    schedule=None,
     catchup=False,
+    max_active_runs=1,
     tags=['investment', 'llm', 'langgraph'],
 ) as dag:
     # PythonOperator를 사용하여 langgraph_processor의 메인 함수 실행

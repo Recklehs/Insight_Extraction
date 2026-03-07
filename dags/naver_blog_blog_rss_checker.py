@@ -1,146 +1,260 @@
 import logging
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 
 import feedparser
 import requests
 from airflow.decorators import dag, task
-from airflow.providers.mysql.hooks.mysql import MySqlHook
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.utils.trigger_rule import TriggerRule
 from pendulum import timezone
 
-# 한국 시간대 설정
+
 KST = timezone("Asia/Seoul")
+BLOG_DB_CONN_ID = "insight_extraction_pg"
+INITIAL_BACKFILL_WINDOW = timedelta(days=2)
+RECOVERY_OVERLAP_WINDOW = timedelta(hours=1)
+
+
+def _entry_published_at(entry) -> datetime | None:
+    published = entry.get("published")
+    if published:
+        try:
+            parsed = parsedate_to_datetime(published)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            return parsed.astimezone(UTC)
+        except (TypeError, ValueError):
+            logging.warning("published 값을 파싱하지 못했습니다: %s", published)
+
+    pub_date_struct = entry.get("published_parsed")
+    if pub_date_struct:
+        return datetime(*pub_date_struct[:6], tzinfo=UTC)
+    return None
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def plan_recovery_window(
+    initial_backfill_completed_at: datetime | None,
+    last_successful_rss_checked_at: datetime | None,
+    now: datetime,
+) -> tuple[str, datetime | None]:
+    if initial_backfill_completed_at is None:
+        return "initial_backfill", now - INITIAL_BACKFILL_WINDOW
+    if last_successful_rss_checked_at is None:
+        return "bridge_recovery", now - INITIAL_BACKFILL_WINDOW
+    return "incremental", last_successful_rss_checked_at - RECOVERY_OVERLAP_WINDOW
+
+
+def should_skip_entry_for_window(published_at: datetime | None, cutoff: datetime | None) -> bool:
+    return cutoff is not None and published_at is not None and published_at < cutoff
+
+
+def mark_blog_rss_success(cursor, blog_id: str, recovery_mode: str, checked_at: datetime) -> None:
+    cursor.execute(
+        """
+        UPDATE naver_blog_list
+        SET initial_backfill_completed_at = CASE
+                WHEN %s = 'initial_backfill' AND initial_backfill_completed_at IS NULL THEN %s
+                ELSE initial_backfill_completed_at
+            END,
+            last_successful_rss_checked_at = %s,
+            updated_at = NOW()
+        WHERE blog_id = %s;
+        """,
+        (recovery_mode, checked_at, checked_at, blog_id),
+    )
+
 
 @dag(
-    dag_id='rss_blog_post_collector',
+    dag_id="rss_blog_post_collector",
     start_date=datetime(2025, 8, 26, tzinfo=KST),
-    schedule='@hourly',  # 1시간에 한번씩 실행
+    schedule="@hourly",
     catchup=False,
     max_active_runs=1,
-    tags=['blog', 'rss', 'collector'],
+    tags=["blog", "rss", "collector"],
     doc_md="""
     ### 블로그 RSS 피드 수집 DAG
 
-    MySQL DB의 `naver_blog_list` 테이블을 참조하여 모니터링할 블로그 목록을 가져옵니다.
-    각 블로그의 RSS 피드를 주기적으로 확인하여, 새로운 게시물이 발견되면 `blog_posts_rss` 테이블에 저장합니다.
-    
-    **✅ 사전 준비사항:**
-    1. **Airflow Connection:** ID가 `blog_posts_db`인 DB 연결 설정
-    2. **Database Tables:**
-        - `naver_blog_list`: 모니터링할 블로그 목록 관리 테이블 (is_active=TRUE)
-        - `blog_posts_rss`: 수집한 새 글 정보를 저장할 테이블
-    3. **Python Libraries:** `requests`, `feedparser`, `apache-airflow-providers-mysql` 설치
+    PostgreSQL의 `naver_blog_list` 테이블을 참조하여 모니터링할 블로그 목록을 가져옵니다.
+    각 블로그의 RSS 피드를 확인하여 새로운 게시물을 `blog_posts_rss`와 `crawl_check`에 저장합니다.
 
-    """
+    **사전 준비사항**
+    1. Airflow Connection: `insight_extraction_pg`
+    2. 대상 DB: PostgreSQL `insight_extraction`
+    3. 스키마: `sql/init_blog_pipeline.sql` 적용
+    """,
 )
 def rss_blog_post_collector_dag():
-    """
-    DB 테이블 기반으로 네이버 블로그 RSS 피드를 확인하여 새로운 글을 수집/저장하는 DAG
-    """
-    
     @task
-    def get_target_blog_ids_from_db() -> list[str]:
-        """DB의 naver_blog_list 테이블에서 활성화된(is_active=TRUE) 블로그 ID 목록을 가져옵니다."""
-        mysql_hook = MySqlHook(mysql_conn_id='insight_extraction_db')
-        sql = "SELECT blog_id FROM naver_blog_list WHERE is_active = TRUE;"
+    def get_target_blogs_from_db() -> list[dict[str, str | None]]:
+        hook = PostgresHook(postgres_conn_id=BLOG_DB_CONN_ID)
+        sql = """
+            SELECT blog_id, blog_url, initial_backfill_completed_at, last_successful_rss_checked_at
+            FROM naver_blog_list
+            WHERE is_active = TRUE
+            ORDER BY blog_id;
+        """
         try:
-            records = mysql_hook.get_records(sql)
-            blog_ids = [row[0] for row in records]
-            if not blog_ids:
-                logging.warning("모니터링할 활성화된 블로그가 DB에 없습니다.")
-            else:
-                logging.info(f"DB에서 가져온 모니터링 대상 블로그: {blog_ids}")
-            return blog_ids
-        except Exception as e:
-            logging.error(f"DB에서 블로그 목록 조회 실패: {e}")
+            records = hook.get_records(sql)
+        except Exception as exc:
+            logging.error("DB에서 블로그 목록 조회 실패: %s", exc)
             return []
 
+        blogs = [
+            {
+                "blog_id": row[0],
+                "blog_url": row[1],
+                "initial_backfill_completed_at": row[2].isoformat() if row[2] else None,
+                "last_successful_rss_checked_at": row[3].isoformat() if row[3] else None,
+            }
+            for row in records
+        ]
+        if not blogs:
+            logging.warning("모니터링할 활성화된 블로그가 DB에 없습니다.")
+        else:
+            logging.info("DB에서 가져온 모니터링 대상 블로그: %s", [blog["blog_id"] for blog in blogs])
+        return blogs
+
     @task
-    def fetch_and_process_rss(blog_id: str):
-        """특정 블로그 ID의 RSS 피드를 가져와 파싱하고 새로운 글을 DB에 저장합니다."""
+    def fetch_and_process_rss(blog: dict[str, str | None]):
+        blog_id = blog["blog_id"]
         if not blog_id:
             logging.warning("유효하지 않은 blog_id 입니다.")
             return
 
+        initial_backfill_completed_at = _parse_iso_datetime(blog.get("initial_backfill_completed_at"))
+        last_successful_rss_checked_at = _parse_iso_datetime(blog.get("last_successful_rss_checked_at"))
+        recovery_mode, cutoff = plan_recovery_window(
+            initial_backfill_completed_at=initial_backfill_completed_at,
+            last_successful_rss_checked_at=last_successful_rss_checked_at,
+            now=datetime.now(UTC),
+        )
+
         rss_url = f"https://rss.blog.naver.com/{blog_id}.xml"
-        logging.info(f"[{blog_id}] RSS 피드를 확인합니다: {rss_url}")
+        logging.info("[%s] RSS 피드를 확인합니다: %s (mode=%s, cutoff=%s)", blog_id, rss_url, recovery_mode, cutoff)
 
         try:
             response = requests.get(rss_url, timeout=15)
             response.raise_for_status()
-        except requests.RequestException as e:
-            logging.error(f"[{blog_id}] RSS 피드 다운로드 실패: {e}")
+        except requests.RequestException as exc:
+            logging.error("[%s] RSS 피드 다운로드 실패: %s", blog_id, exc)
             return
 
         feed = feedparser.parse(response.content)
-
         if not feed.entries:
-            logging.info(f"[{blog_id}] 게시물이 없습니다.")
+            logging.info("[%s] 게시물이 없습니다.", blog_id)
+            if recovery_mode in {"initial_backfill", "bridge_recovery", "incremental"}:
+                hook = PostgresHook(postgres_conn_id=BLOG_DB_CONN_ID)
+                conn = hook.get_conn()
+                cursor = conn.cursor()
+                try:
+                    mark_blog_rss_success(cursor, blog_id, recovery_mode, datetime.now(UTC))
+                    conn.commit()
+                finally:
+                    cursor.close()
+                    conn.close()
             return
 
-        mysql_hook = MySqlHook(mysql_conn_id='insight_extraction_db')
+        hook = PostgresHook(postgres_conn_id=BLOG_DB_CONN_ID)
+        conn = None
+        cursor = None
         new_posts_count = 0
 
-        # 피드에 있는 글을 시간 순서대로(오래된 글 -> 최신 글) 처리하기 위해 순서를 뒤집음
-        for entry in reversed(feed.entries):
-            guid = entry.get('guid')
-            link = entry.get('link')
-            if not (guid and link):
-                logging.warning(f"[{blog_id}] GUID 또는 Link가 없는 항목을 건너뜁니다: {entry.get('title')}")
-                continue
+        try:
+            conn = hook.get_conn()
+            cursor = conn.cursor()
 
-            # DB에 이미 존재하는지 확인 (테이블명: blog_posts_rss)
-            result = mysql_hook.get_first("SELECT guid FROM blog_posts_rss WHERE guid = %s", parameters=(guid,))
+            for entry in reversed(feed.entries):
+                guid = entry.get("guid") or entry.get("id") or entry.get("link")
+                link = entry.get("link")
+                if not (guid and link):
+                    logging.warning("[%s] GUID 또는 Link가 없는 항목을 건너뜁니다: %s", blog_id, entry.get("title"))
+                    continue
 
-            if result is None:
-                new_posts_count += 1
-                logging.info(f"[{blog_id}] 새로운 글 발견! >> {entry.title}")
+                published_at = _entry_published_at(entry)
+                if should_skip_entry_for_window(published_at, cutoff):
+                    continue
 
-                pub_date_struct = entry.get('published_parsed')
-                pub_date = datetime(*pub_date_struct[:6]) if pub_date_struct else datetime.now()
+                insert_post_sql = """
+                    INSERT INTO blog_posts_rss (guid, blog_id, title, link, author, pub_date, summary)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (guid) DO NOTHING
+                    RETURNING guid;
+                """
+                cursor.execute(
+                    insert_post_sql,
+                    (
+                        guid,
+                        blog_id,
+                        entry.get("title", "N/A"),
+                        link,
+                        entry.get("author", ""),
+                        published_at,
+                        entry.get("summary", ""),
+                    ),
+                )
+                inserted = cursor.fetchone()
 
-                # === 트랜잭션을 사용한 DB 저장 (수정된 부분) ===
-                conn = None
-                cursor = None
-                try:
-                    conn = mysql_hook.get_conn()
-                    cursor = conn.cursor()
-
-                    # 1. blog_posts_rss 테이블에 새 글 저장
-                    sql_insert_post = """
-                        INSERT INTO blog_posts_rss (guid, blog_id, title, link, author, pub_date, summary)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s);
-                    """
-                    params_post = (
-                        guid, blog_id, entry.get('title', 'N/A'), link,
-                        entry.get('author', ''), pub_date, entry.get('summary', '')
+                if inserted:
+                    cursor.execute(
+                        """
+                        INSERT INTO crawl_check (guid, source_url, crawled, created_at, updated_at)
+                        VALUES (%s, %s, FALSE, NOW(), NOW())
+                        ON CONFLICT (guid) DO NOTHING;
+                        """,
+                        (guid, link),
                     )
-                    cursor.execute(sql_insert_post, params_post)
-
-                    # 2. crawl_check 테이블에 해당 guid 추가
-                    sql_insert_check = "INSERT INTO crawl_check (guid) VALUES (%s);"
-                    cursor.execute(sql_insert_check, (guid,)) # crawled, created_at은 DEFAULT 값 사용
-
-                    # 모든 작업이 성공하면 커밋
                     conn.commit()
+                    new_posts_count += 1
+                    logging.info("[%s] 새로운 글 발견! >> %s", blog_id, entry.get("title", guid))
+                else:
+                    conn.rollback()
 
-                except Exception as e:
-                    logging.error(f"[{blog_id}] DB 저장 중 오류 발생, 롤백합니다: {e}")
-                    if conn:
-                        conn.rollback() # 오류 발생 시 모든 작업을 되돌림
-                finally:
-                    if cursor:
-                        cursor.close()
-                    if conn:
-                        conn.close()
+            checked_at = datetime.now(UTC)
+            mark_blog_rss_success(cursor, blog_id, recovery_mode, checked_at)
+            conn.commit()
+            if recovery_mode == "initial_backfill":
+                logging.info("[%s] 초기 2일 백필을 완료했습니다.", blog_id)
+            elif recovery_mode == "bridge_recovery":
+                logging.info("[%s] 재기동 브리지 복구를 완료했습니다.", blog_id)
+            else:
+                logging.info("[%s] incremental RSS 체크를 완료했습니다.", blog_id)
+
+        except Exception as exc:
+            if conn:
+                conn.rollback()
+            logging.error("[%s] RSS 저장 중 오류 발생: %s", blog_id, exc)
+            raise
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
         if new_posts_count == 0:
-            logging.info(f"[{blog_id}] 확인 완료. 새로운 글이 없습니다.")
+            logging.info("[%s] 확인 완료. 새로운 글이 없습니다.", blog_id)
         else:
-            logging.info(f"[{blog_id}] 총 {new_posts_count}개의 새로운 글을 저장했습니다.")
+            logging.info("[%s] 총 %s개의 새로운 글을 저장했습니다.", blog_id, new_posts_count)
 
-    # DAG 실행 흐름 정의
-    blog_ids_list = get_target_blog_ids_from_db()
-    fetch_and_process_rss.expand(blog_id=blog_ids_list)
+    blogs = get_target_blogs_from_db()
+    processed_blogs = fetch_and_process_rss.expand(blog=blogs)
+    trigger_crawler = TriggerDagRunOperator(
+        task_id="trigger_blog_crawler",
+        trigger_dag_id="naver_blog_playwright_scraper_from_db_v5",
+        wait_for_completion=False,
+        trigger_rule=TriggerRule.ALL_DONE,
+    )
+    processed_blogs >> trigger_crawler
 
-# DAG 인스턴스 생성
+
 rss_blog_post_collector_dag()
