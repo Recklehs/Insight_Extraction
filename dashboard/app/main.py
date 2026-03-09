@@ -24,6 +24,8 @@ from .models import BlogPostRSS, CrawlCheck, CrawlResult, InvestmentSignal, Nave
 BASE_DIR = Path(__file__).resolve().parent
 AIRFLOW_API_URL = os.getenv("AIRFLOW_API_URL", "http://airflow-apiserver:8080").rstrip("/")
 ANALYSIS_DAG_ID = "investment_signal_extraction_dag"
+BLOG_LLM_VARIABLE_KEY = "blog_llm_model"
+DEFAULT_BLOG_LLM_MODEL = "gemini-3-flash-preview"
 SIGNAL_PERIODS = {
     "7d": {"label": "최근 7일", "delta": timedelta(days=7)},
     "30d": {"label": "최근 1달", "delta": timedelta(days=30)},
@@ -56,6 +58,12 @@ def truncate_text(value: str | None, limit: int = 180) -> str | None:
     if len(collapsed) <= limit:
         return collapsed
     return f"{collapsed[:limit - 1].rstrip()}..."
+
+
+def normalize_llm_model_name(value: str | None) -> str:
+    if value is None:
+        return ""
+    return re.sub(r"\s+", " ", value).strip()
 
 
 def build_core_flash_url(base_path: str, *, message: str | None = None, error: str | None = None) -> str:
@@ -304,6 +312,92 @@ def request_airflow_token() -> str:
     return token
 
 
+def get_blog_llm_model_fallback() -> str:
+    return normalize_llm_model_name(os.getenv("BLOG_LLM_MODEL", DEFAULT_BLOG_LLM_MODEL)) or DEFAULT_BLOG_LLM_MODEL
+
+
+def build_airflow_api_request(path: str, *, method: str, token: str, payload: dict | None = None) -> UrlRequest:
+    data = None
+    headers = {"Authorization": f"Bearer {token}"}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    return UrlRequest(f"{AIRFLOW_API_URL}{path}", data=data, headers=headers, method=method)
+
+
+def get_current_blog_llm_model() -> str:
+    fallback = get_blog_llm_model_fallback()
+    try:
+        token = request_airflow_token()
+        request = build_airflow_api_request(
+            f"/api/v2/variables/{BLOG_LLM_VARIABLE_KEY}",
+            method="GET",
+            token=token,
+        )
+        with urlopen(request, timeout=10) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return fallback
+
+    model_name = normalize_llm_model_name(str(body.get("value", "")))
+    return model_name or fallback
+
+
+def set_current_blog_llm_model(model_name: str) -> None:
+    normalized = normalize_llm_model_name(model_name)
+    payload = {"key": BLOG_LLM_VARIABLE_KEY, "value": normalized}
+
+    try:
+        token = request_airflow_token()
+        patch_request = build_airflow_api_request(
+            f"/api/v2/variables/{BLOG_LLM_VARIABLE_KEY}",
+            method="PATCH",
+            token=token,
+            payload=payload,
+        )
+        with urlopen(patch_request, timeout=10):
+            return
+    except HTTPError as exc:
+        if exc.code != 404:
+            body = exc.read().decode("utf-8", "ignore")
+            raise RuntimeError(f"Airflow 변수 저장 실패: HTTP {exc.code} {body}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"Airflow 변수 저장 실패: {exc.reason}") from exc
+
+    try:
+        token = request_airflow_token()
+        post_request = build_airflow_api_request(
+            "/api/v2/variables",
+            method="POST",
+            token=token,
+            payload=payload,
+        )
+        with urlopen(post_request, timeout=10):
+            return
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", "ignore")
+        raise RuntimeError(f"Airflow 변수 저장 실패: HTTP {exc.code} {body}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"Airflow 변수 저장 실패: {exc.reason}") from exc
+
+
+def get_blog_llm_model_candidates(session: Session, current_model: str) -> list[str]:
+    rows = session.scalars(
+        select(ProcessingLog.llm_model)
+        .where(ProcessingLog.llm_model.is_not(None))
+        .distinct()
+        .order_by(ProcessingLog.llm_model.asc())
+    ).all()
+    candidates = {
+        normalized
+        for normalized in (normalize_llm_model_name(value) for value in rows)
+        if normalized
+    }
+    if current_model:
+        candidates.add(current_model)
+    return sorted(candidates)
+
+
 def trigger_analysis_dag_run(conf: dict | None = None):
     token = request_airflow_token()
     logical_date = datetime.now(UTC).isoformat()
@@ -430,14 +524,40 @@ def signals_dashboard(request: Request, session: Session = Depends(get_session))
 
 @app.get("/blogs", response_class=HTMLResponse)
 def list_blogs(request: Request, session: Session = Depends(get_session)):
+    current_llm_model = get_current_blog_llm_model()
     context = {
         "request": request,
         "active_blogs": fetch_blog_rows(session, True),
         "inactive_blogs": fetch_blog_rows(session, False),
+        "current_llm_model": current_llm_model,
+        "llm_model_candidates": get_blog_llm_model_candidates(session, current_llm_model),
         "error": request.query_params.get("error"),
         "message": request.query_params.get("message"),
     }
     return templates.TemplateResponse(request=request, name="blogs.html", context=context)
+
+
+@app.post("/settings/llm-model", response_class=HTMLResponse)
+def update_llm_model_setting(llm_model: str = Form(...)):
+    normalized = normalize_llm_model_name(llm_model)
+    if not normalized:
+        return RedirectResponse(
+            url=build_core_flash_url("/blogs", error="LLM 모델명을 입력해주세요."),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    try:
+        set_current_blog_llm_model(normalized)
+    except Exception as exc:
+        return RedirectResponse(
+            url=build_core_flash_url("/blogs", error=str(exc)),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    return RedirectResponse(
+        url=build_core_flash_url("/blogs", message=f"LLM 모델을 {normalized}로 저장했습니다."),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @app.post("/blogs", response_class=HTMLResponse)

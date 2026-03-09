@@ -115,6 +115,7 @@ class DashboardAnalysisViewsTest(unittest.TestCase):
         log_id: int,
         status: str,
         processed_at: datetime,
+        llm_model: str = "gemini-3-flash-preview",
         error_message: str | None = None,
         signals: list[dict] | None = None,
     ):
@@ -123,7 +124,7 @@ class DashboardAnalysisViewsTest(unittest.TestCase):
                 log_id=log_id,
                 crawl_result_guid=guid,
                 status=status,
-                llm_model="gemini-3-flash-preview",
+                llm_model=llm_model,
                 error_message=error_message,
                 processed_at=processed_at,
             )
@@ -318,6 +319,69 @@ class DashboardAnalysisViewsTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("/signals", response.text)
+
+    def test_blogs_page_shows_current_llm_model_and_historical_candidates(self):
+        guid = self.seed_post(blog_id="modelblog", guid="https://blog.naver.com/modelblog/1", title="모델 이력 글")
+        self.add_log(
+            guid=guid,
+            log_id=73,
+            status="success",
+            processed_at=datetime(2026, 3, 7, 10, 0, tzinfo=UTC),
+            llm_model="gemini-2.5-flash",
+            signals=[],
+        )
+
+        with patch(
+            "dashboard.app.main.get_current_blog_llm_model",
+            return_value="gemini-3-flash-preview",
+            create=True,
+        ):
+            response = self.client.get("/blogs")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("현재 LLM 모델", response.text)
+        self.assertIn('value="gemini-3-flash-preview"', response.text)
+        self.assertIn('option value="gemini-2.5-flash"', response.text)
+
+    def test_llm_model_setting_route_trims_and_saves_model(self):
+        with patch("dashboard.app.main.set_current_blog_llm_model", create=True) as set_model_mock:
+            response = self.client.post(
+                "/settings/llm-model",
+                data={"llm_model": "  gemini-2.0-flash  "},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("/blogs?message=", response.headers["location"])
+        set_model_mock.assert_called_once_with("gemini-2.0-flash")
+
+    def test_llm_model_setting_route_rejects_blank_values(self):
+        with patch("dashboard.app.main.set_current_blog_llm_model", create=True) as set_model_mock:
+            response = self.client.post(
+                "/settings/llm-model",
+                data={"llm_model": "   "},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("/blogs?error=", response.headers["location"])
+        set_model_mock.assert_not_called()
+
+    def test_llm_model_setting_route_surfaces_storage_errors(self):
+        with patch(
+            "dashboard.app.main.set_current_blog_llm_model",
+            side_effect=RuntimeError("Airflow variable update failed"),
+            create=True,
+        ):
+            response = self.client.post(
+                "/settings/llm-model",
+                data={"llm_model": "gemini-2.5-pro"},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("/blogs?error=", response.headers["location"])
+        self.assertIn("Airflow+variable+update+failed", response.headers["location"])
 
     def test_signals_page_shows_buy_and_sell_sections_for_default_7d_period(self):
         buy_guid = self.seed_post(

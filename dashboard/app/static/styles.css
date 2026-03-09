@@ -162,7 +162,8 @@ a {
   gap: 12px;
 }
 
-input[type="url"] {
+input[type="url"],
+input[type="text"] {
   width: 100%;
   min-width: 0;
   padding: 14px 16px;
